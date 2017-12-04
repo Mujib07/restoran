@@ -1,33 +1,65 @@
+# PHP CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-php/ for more details
+#
 version: 2
-
 jobs:
   build:
     docker:
-      - image: circleci/php:7.1-node-browsers
-    working_directory: ~/laravel
+      # specify the version you desire here
+      - image: framgia/laravel-workspace
+
+      # Specify service dependencies here if necessary
+      # CircleCI maintains a library of pre-built images
+      # documented at https://circleci.com/docs/2.0/circleci-images/
+      - image: circleci/mysql:5.7.18
+        environment:
+          MYSQL_DATABASE: homestead_test
+          MYSQL_USER: homestead_test
+          MYSQL_PASSWORD: secret
+          MYSQL_ROOT_PASSWORD: root
+
+    working_directory: ~/repo
+
     steps:
       - checkout
-      - run: sudo apt install -y libsqlite3-dev
-      - run: sudo composer self-update
+
+      - run: chmod -R 777 storage
+      - run: cp .env.testing.example .env
+
+      # Download and cache dependencies
+      # Composer
       - restore_cache:
+          name: Restore composer cache
           keys:
-            - composer-v1-{{ checksum "composer.json" }}
-            - composer-v1-
+          - composer-{{ checksum "composer.json" }}
+          - composer-
       - run: composer install -n --prefer-dist
       - save_cache:
-          key: composer-v1-{{ checksum "composer.json" }}
+          name: Store composer cache
+          key: composer-{{ checksum "composer.json" }}
           paths:
             - vendor
+      # Yarn
       - restore_cache:
+          name: Restore yarn cache
           keys:
-            - node-v1-{{ checksum "package.json" }}
-            - node-v1-
-      - run: yarn install
+            - yarn-{{ checksum "yarn.lock" }}
+            - yarn-
+      - run: yarn
       - save_cache:
-          key: node-v1-{{ checksum "package.json" }}
           paths:
             - node_modules
-      - run: touch storage/testing.sqlite
-      - run: php artisan migrate --env=testing --database=sqlite_testing --force
-      - run: ./vendor/bin/codecept build
-      - run: ./vendor/bin/codecept run
+          key: yarn-{{ checksum "composer.json" }}
+
+      - run: npm run production
+      - run: php artisan migrate --database=mysql_test
+      # run tests!
+      - run:
+          command: |
+            mkdir -p /phpunit &&
+            php -dzend_extension=xdebug.so vendor/bin/phpunit --coverage-clover=phpunit/coverage-clover.xml --coverage-html=phpunit/coverage
+      - store_test_results:
+          path: /phpunit
+      - store_artifacts:
+          path: /phpunit
